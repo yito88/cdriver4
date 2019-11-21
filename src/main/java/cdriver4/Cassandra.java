@@ -9,13 +9,15 @@ import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
-import com.datastax.oss.driver.api.querybuilder.relation.Relation;
+import com.datastax.oss.driver.api.core.cql.Statement;
+import com.datastax.oss.driver.api.querybuilder.condition.Condition;
 import com.datastax.oss.driver.api.querybuilder.insert.InsertInto;
 import com.datastax.oss.driver.api.querybuilder.insert.RegularInsert;
-import com.datastax.oss.driver.api.querybuilder.update.UpdateStart;
-import com.datastax.oss.driver.api.querybuilder.update.UpdateWithAssignments;
+import com.datastax.oss.driver.api.querybuilder.relation.Relation;
 import com.datastax.oss.driver.api.querybuilder.select.Select;
 import com.datastax.oss.driver.api.querybuilder.select.SelectFrom;
+import com.datastax.oss.driver.api.querybuilder.update.UpdateStart;
+import com.datastax.oss.driver.api.querybuilder.update.UpdateWithAssignments;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,10 @@ public class Cassandra {
 
   public ResultSet directExecute(String query) {
     return session.execute(query);
+  }
+
+  public ResultSet directExecute(Statement statement) {
+    return session.execute(statement);
   }
 
   public ResultSet get(Get get) {
@@ -158,13 +164,20 @@ public class Cassandra {
     }
 
     List<Relation> relations = new ArrayList<Relation>();
-    update.getPartitionKeyNames()
+    update
+        .getPartitionKeyNames()
         .forEach(k -> relations.add(Relation.column(k).isEqualTo(bindMarker())));
-    update.getClusteringKeyNames()
+    update
+        .getClusteringKeyNames()
         .forEach(k -> relations.add(Relation.column(k).isEqualTo(bindMarker())));
 
-    // TODO: check conditions
-    String queryString = ua.where(relations).asCql();
+    // TODO: other operators
+    List<Condition> conditions = new ArrayList<Condition>();
+    update
+        .getConditions()
+        .forEach((n, v) -> conditions.add(Condition.column(n).isEqualTo(bindMarker())));
+
+    String queryString = ua.where(relations).if_(conditions).asCql();
 
     // make a statement
     PreparedStatement prepared = null;
@@ -190,6 +203,9 @@ public class Cassandra {
     }
     for (String v : put.getClusteringKeyValues()) {
       bound = bound.setString(i++, v);
+    }
+    for (Integer v : put.getConditions().values()) {
+      bound = bound.setInt(i++, (int) v);
     }
 
     return bound;
